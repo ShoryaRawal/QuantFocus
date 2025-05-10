@@ -1,7 +1,5 @@
 #include <stdio.h>
 
-// Declare Fortran subroutines exposed via bind(C)
-
 extern void c_init_simulation(double *energy, double *thickness, double *angle_stddev, int *num_electrons);
 extern void c_run_simulation(void);
 extern void c_get_scatter_data(double **data, int *rows, int *cols);
@@ -16,11 +14,9 @@ int main() {
     
     printf("Simulation initialized.\n");
 
-    // Run simulation
     c_run_simulation();
     printf("Simulation completed.\n");
 
-    // Retrieve data
     double *data = NULL;
     int rows, cols;
     c_get_scatter_data(&data, &rows, &cols);
