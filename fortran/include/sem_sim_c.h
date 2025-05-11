@@ -361,6 +361,17 @@ sem_error_t sem_simulate_electron(
     uint32_t* se_count
 );
 
+
+// Initializes simulation with minimal parameters
+void c_init_simulation(double energy, double thickness, double angle_stddev, int n_electrons);
+
+// Runs the Monte Carlo simulation
+void c_run_simulation(void);
+
+// Gets raw scattering data
+void c_get_scatter_data(double** data, int* rows, int* cols);
+
+
 /**
  * @brief Set a callback function for progress reporting
  * 

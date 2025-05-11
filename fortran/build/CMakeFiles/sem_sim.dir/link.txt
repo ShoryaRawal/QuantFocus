@@ -1,0 +1,2 @@
+/usr/bin/ar qc libsem_sim.a CMakeFiles/sem_sim.dir/src/beam.f90.o CMakeFiles/sem_sim.dir/src/monte_carlo.f90.o CMakeFiles/sem_sim.dir/src/materials.f90.o CMakeFiles/sem_sim.dir/src/scattering.f90.o CMakeFiles/sem_sim.dir/src/signals.f90.o CMakeFiles/sem_sim.dir/src/c_interface.f90.o
+/usr/bin/ranlib libsem_sim.a

@@ -1,0 +1,8 @@
+# The fortran modules provided by this target.
+provides
+ beam.mod
+ c_interface.mod
+ materials.mod
+ monte_carlo.mod
+ scattering.mod
+ signals.mod
