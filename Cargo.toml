@@ -38,6 +38,7 @@ crossbeam-channel = "0.5"
 log = "0.4"
 env_logger = "0.10"
 config = "0.13"
+sdl2 = "0.34"
 
 [build-dependencies]
 bindgen = "0.70.1"
@@ -53,3 +54,6 @@ predicates = "2.1"
 default = ["gui"]
 gui = ["iced"]
 cli = []
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-mmacosx-version-min=15.0"]

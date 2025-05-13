@@ -1,0 +1,46 @@
+# Makefile
+
+# -- Compiler settings --------------------------------------
+FC     := gfortran
+CC     := gcc
+FFLAGS := -O2 -c
+CFLAGS := -O2 -c
+
+# -- Paths --------------------------------------------------
+F90_DIR := fortran/src
+C_DIR   := fortran/src
+INC_F   := -Ifortran/include -I$(F90_DIR)
+
+# -- Sources & Objects --------------------------------------
+F90_SRCS := beam.f90 materials.f90 scattering.f90 signals.f90 monte_carlo.f90 c_interface.f90
+F90_OBJS := $(F90_SRCS:.f90=.o)
+
+C_SRCS   := run.c
+C_OBJS   := $(C_SRCS:.c=.o)
+
+# -- Executable name ----------------------------------------
+TARGET := sim
+
+# -- Default target ----------------------------------------
+all: $(TARGET)
+
+# -- Link everything with gfortran (pulls in Fortran runtime) -
+$(TARGET): $(F90_OBJS) $(C_OBJS)
+	$(FC) $(F90_OBJS) $(C_OBJS) -o $@
+
+# -- Compile each Fortran source (modules first) ---------
+#    Pattern: foo.o from fortran/src/foo.f90
+%.o: $(F90_DIR)/%.f90
+	$(FC) $(FFLAGS) $(INC_F) $< -o $@
+
+# -- Compile the C runner ---------------------------------
+run.o: $(C_DIR)/run.c
+	$(CC) $(CFLAGS) -Ifortran/include $< -o $@
+
+# -- Clean up build artifacts -----------------------------
+clean:
+	rm -f $(F90_OBJS) $(C_OBJS) *.mod $(TARGET)
+
+# -- Run the simulation -----------------------------------
+run: $(TARGET)
+	./$(TARGET)

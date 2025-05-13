@@ -1,0 +1,68 @@
+// build.rs
+
+use std::env;
+use std::path::Path;
+use std::process::Command;
+
+fn main() {
+    let out_path = env::var("OUT_DIR").unwrap();
+
+    // Generate bindings from the C header
+    let bindings = bindgen::Builder::default()
+        .header("fortran/include/sem_sim_c.h")
+        .rust_target(bindgen::RustTarget::Nightly)
+        .wrap_unsafe_ops(true)
+        .generate()
+        .expect("Unable to generate bindings");
+
+    bindings
+        .write_to_file(Path::new(&out_path).join("bindings.rs"))
+        .expect("Couldn't write bindings!");
+
+    // Compile the C wrapper file
+    cc::Build::new()
+        .file("fortran/src/run.c")
+        .include("fortran/include")
+        .compile("sem_c_api");
+
+    // Path to the already-built Fortran static lib
+    let fortran_lib_path = "fortran/build"; // adjust if different
+
+    if !Path::new(&format!("{}/libsem_sim.a", fortran_lib_path)).exists() {
+        panic!("Fortran library not found. Please build with CMake first.");
+    }
+
+    // Tell Rust where to find the libraries
+    println!("cargo:rustc-link-search=native={}", fortran_lib_path);
+    println!("cargo:rustc-link-lib=static=sem_sim");     // Fortran static library
+    println!("cargo:rustc-link-lib=static=sem_c_api");    // C wrapper object from cc
+    println!("cargo:rustc-link-search=native=/opt/homebrew/Cellar/gcc/14.2.0_1/lib/gcc/current");
+    println!("cargo:rustc-link-lib=gfortran");
+
+    // Link Fortran runtime (if needed on your platform)
+    if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=gfortran");
+    } else {
+        println!("cargo:rustc-link-lib=gfortran");
+    }
+}
+
+
+// fn main() {
+//     let header_path = "fortran/include/sem_sim_c.h";
+//     println!("cargo:rerun-if-changed={}", header_path);
+
+//     let bindings = bindgen::Builder::default()
+//         .header(header_path)
+//         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+//         .generate_comments(true)
+//         .allowlist_function("c_.*")
+//         .generate()
+//         .expect("Unable to generate bindings");
+
+//     // Write to $OUT_DIR/bindings.rs
+//     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
+//     bindings
+//         .write_to_file(out_path)
+//         .expect("Couldn't write bindings to $OUT_DIR");
+// }

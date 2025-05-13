@@ -1,80 +1,63 @@
-//! Visualization component for SEM simulation results.
-//! Provides interactive display (zoom, pan, histogram) of the result image.
+// src/ui/visualizer.rs
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::rect::Rect;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use std::time::Duration;
 
-use eframe::egui::{self, ColorImage, TextureHandle, Ui, Vec2};
-use egui::paint::callbacks::{PaintCallback, PaintCallbackFn};
+/// Displays an 8-bit grayscale buffer by converting it to RGB24 and streaming it.
+pub fn display_image(
+    title: &str,
+    width: u32,
+    height: u32,
+    gray_buffer: &Vec<u8>,
+) -> Result<(), String> {
+    // SDL2 init
+    let sdl = sdl2::init().map_err(|e| e.to_string())?;
+    let video = sdl.video().map_err(|e| e.to_string())?;
+    let window = video
+        .window(title, width, height)
+        .position_centered()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    let creator = canvas.texture_creator();
 
-/// State for interactive image visualization.
-pub struct Visualizer {
-    /// Current zoom factor (1.0 = 100%).
-    pub zoom: f32,
-    /// Current panning offset in pixels.
-    pub offset: Vec2,
-    /// Optional histogram data (0..255 counts).
-    pub histogram: Option<[usize; 256]>,
-}
-
-impl Default for Visualizer {
-    fn default() -> Self {
-        Self {
-            zoom: 1.0,
-            offset: Vec2::ZERO,
-            histogram: None,
-        }
+    // Build an RGB24 buffer (3 bytes per pixel)
+    let mut rgb_buffer = Vec::with_capacity((width * height * 3) as usize);
+    for &g in gray_buffer.iter() {
+        rgb_buffer.push(g);  // R
+        rgb_buffer.push(g);  // G
+        rgb_buffer.push(g);  // B
     }
-}
 
-impl Visualizer {
-    /// Display the image texture with interactive controls.
-    pub fn show(&mut self, ui: &mut Ui, texture: &TextureHandle) {
-        // Controls: zoom slider and reset button
-        ui.horizontal(|ui| {
-            ui.label("Zoom:");
-            ui.add(
-                egui::DragValue::new(&mut self.zoom)
-                    .clamp_range(0.1..=10.0)
-                    .speed(0.1),
-            );
-            if ui.button("Reset").clicked() {
-                self.zoom = 1.0;
-                self.offset = Vec2::ZERO;
-            }
-        });
+    // Create a streaming texture in RGB24 format
+    let mut texture = creator
+        .create_texture_streaming(PixelFormatEnum::RGB24, width, height)
+        .map_err(|e| e.to_string())?;
 
-        // Interactive image area
-        let available = ui.available_size();
-        let image_size = texture.size_vec2() * self.zoom;
-        let (response, painter) = ui.allocate_painter(image_size, egui::Sense::drag());
+    // Upload our 3-byte buffer (pitch = width * 3)
+    texture
+        .update(None, &rgb_buffer, (width * 3) as usize)
+        .map_err(|e| e.to_string())?;
 
-        // Handle panning
-        if response.dragged() {
-            self.offset += response.drag_delta();
-        }
-
-        // Calculate top-left position with offset
-        let pos = response.rect.min + self.offset;
-        painter.add(egui::PaintCallback {
-            callback: std::sync::Arc::new(egui::PaintCallbackFn::new(move |_, painter| {
-                painter.image(
-                    texture.id(),
-                    egui::Rect::from_min_size(pos, image_size),
-                    egui::Rect::from_min_size(egui::Pos2::ZERO, texture.size_vec2()),
-                    egui::Color32::WHITE,
-                );
-            })),
-            rect: response.rect,
-        });
-
-        ui.separator();
-        ui.collapsing("Histogram", |ui| {
-            if self.histogram.is_none() {
-                // Compute histogram lazily
-                if let Some(data) = texture // cannot access raw; skip for now
-                {
-                    // Placeholder: histogram computation should be done pre-texture
+    // Event loop: render and wait for quit
+    let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
+    'running: loop {
+        for ev in events.poll_iter() {
+            match ev {
+                Event::Quit { .. }
+                | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    break 'running;
                 }
+                _ => {}
             }
-            ui.label("Histogram view TBD");
-        });
+        }
+        canvas.clear();
+        canvas.copy(&texture, None, Some(Rect::new(0, 0, width, height)))?;
+        canvas.present();
+        std::thread::sleep(Duration::from_millis(16));
     }
+
+    Ok(())
 }
