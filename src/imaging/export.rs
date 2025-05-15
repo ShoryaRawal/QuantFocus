@@ -1,13 +1,11 @@
 //! Image export utilities for SEM simulator.
 
 use std::fs::File;
-use std::io::BufWriter;
-use std::io;
+use std::io::{self, BufWriter};
+use std::path::Path;
 
-use image::{GrayImage, ImageError};
-use image::ImageFormat;
+use image::{ImageBuffer, ImageError, Luma};
 use png::{Encoder, ColorType, BitDepth};
-
 
 use crate::simulation::parameters::SimulationParameters;
 
@@ -27,10 +25,9 @@ pub fn save_png(
     width: u32,
     height: u32,
 ) -> Result<(), ImageError> {
-    // Create a GrayImage from the raw buffer
-    let img: GrayImage = GrayImage::from_raw(width, height, buffer.to_vec())
-     .expect("Buffer length does not match width*height");
-
+    // Create an ImageBuffer from the raw buffer
+    let img: ImageBuffer<Luma<u8>, Vec<u8>> = ImageBuffer::from_raw(width, height, buffer.to_vec())
+        .expect("Buffer length does not match width*height");
 
     // Save using the image crate
     img.save(path)
@@ -65,9 +62,9 @@ pub fn save_png_with_metadata(
 
     // Add tEXt chunks for metadata
     encoder.add_text_chunk("Energy_keV".into(), params.energy_kev.to_string())?;
-    encoder.add_text_chunk("Thickness_nm".into(), params.thickness_nm.to_string())?;
-    encoder.add_text_chunk("Angle_stddev_rad".into(), params.angle_stddev_rad.to_string())?;
-    encoder.add_text_chunk("Num_electrons".into(), params.num_electrons.to_string())?;
+    encoder.add_text_chunk("Current_nA".into(), params.current_na.to_string())?;
+    encoder.add_text_chunk("Resolution".into(), params.resolution.to_string())?;
+    encoder.add_text_chunk("Distance_mm".into(), params.distance_mm.to_string())?;
 
     let mut writer = encoder.write_header()?;
 

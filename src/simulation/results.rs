@@ -17,33 +17,34 @@ pub struct SimulationResult {
 impl SimulationResult {
     /// Converts raw scatter data into a SimulationResult, applying gamma and LUT.
     pub fn from_scatter(scatter: ScatterData, params: &SimulationParameters) -> Self {
-        let rows = scatter.rows;
-        let cols = scatter.cols;
+        // Get the 2D image data from Fortran
+        let (image_data, width, height) = crate::ffi::wrapper::get_image_data();
+        
+        println!("Raw image data dimensions: {}×{}", width, height);
         
         // Apply image formation (normalize to [0,255], gamma=1.0 by default)
         let image_buffer = formation::to_grayscale_bytes(
-            &scatter.data,
-            rows,
-            cols,
+            &image_data,
+            height,
+            width,
             /* gamma */ 1.0,
             /* lut */ None,
-        );
+        ).0;  // Only take the buffer, dimensions are already known
 
-        // export to disk or embed metadata
-        // let filename = format!("sim_{:.1}keV_{}e.png", params.energy_kev, params.num_electrons);
-        // export::save_png(&filename, &image_buffer, cols as u32, rows as u32)
+        println!("Final image dimensions: {}×{}", width, height);
         
         SimulationResult {
             params: params.clone(),
             scatter,
             image_buffer,
-            width: cols,
-            height: rows,
+            width,
+            height,
         }
     }
 
     /// Save the result image to a PNG file with embedded metadata.
     pub fn save_png(&self, path: &str) -> Result<(), image::ImageError> {
+        println!("Saving PNG with dimensions: {}×{}", self.width, self.height);
         export::save_png_with_metadata(
             path,
             &self.image_buffer,

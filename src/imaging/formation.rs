@@ -1,86 +1,98 @@
-//! This module provides image formation from simulation data and export utilities.
-
 use crate::imaging::Lut;
 
-/// Map raw simulation data (floats) into an 8-bit grayscale image buffer.
-///
-/// # Arguments
-/// - `data`: Flat slice of length `rows * cols` containing simulation values.
-/// - `rows`: Number of rows in the image.
-/// - `cols`: Number of columns in the image.
-/// - `gamma`: Gamma correction factor (> 0). 1.0 means linear mapping.
-/// - `lut`: Optional lookup table to remap final 0–255 values.
-///
-/// # Returns
-/// A `Vec<u8>` of length `rows * cols`, row-major, representing grayscale intensities.
-
+/// Converts a floating-point simulation buffer into an 8-bit grayscale buffer,
+/// downscaling if needed to fit SDL's texture limits.
 pub fn to_grayscale_bytes(
     data: &[f64],
-    rows: usize,
-    cols: usize,
+    height: usize,
+    width: usize,
     gamma: f64,
     lut: Option<&Lut>,
-) -> Vec<u8> {
+) -> (Vec<u8>, usize, usize) {  // Return buffer and its dimensions
     assert!(gamma > 0.0, "Gamma must be greater than zero");
-    assert_eq!(data.len(), rows * cols, "Data length does not match rows*cols");
+    assert_eq!(data.len(), width * height, "Data length does not match width*height");
+    assert!(width > 0 && height > 0, "Dimensions must be greater than zero");
 
-    const MAX_DIM: usize = 16384;
+    // Constants for dimension limits
+    const MAX_DIM: usize = 4096;  // Quarter of SDL's limit for safety
+    const MIN_DIM: usize = 32;    // Minimum dimension to prevent degenerate cases
 
-    // Find data range
+    println!("Converting image data with dimensions {}×{}", width, height);
+
+    // Find data range for normalization
     let (min, max) = data.iter().fold(
         (f64::INFINITY, f64::NEG_INFINITY),
-        |(min, max), &v| (f64::min(min, v), f64::max(max, v)),
+        |(min, max), &v| (min.min(v), max.max(v)),
     );
     let range = max - min;
 
-    // Convert values to grayscale u8
-    let mut grayscale = Vec::with_capacity(rows * cols);
-    for &val in data {
-        let norm = if range > 0.0 { (val - min) / range } else { 0.0 };
-        let corrected = norm.powf(1.0 / gamma);
-        let mut byte = (corrected * 255.0).round().clamp(0.0, 255.0) as u8;
-        if let Some(table) = lut {
-            byte = table[byte as usize];
+    // Convert to 8-bit grayscale with gamma correction
+    let mut grayscale = vec![0u8; width * height];
+    for (i, &value) in data.iter().enumerate() {
+        let normalized = if range > 0.0 {
+            ((value - min) / range).powf(1.0 / gamma)
+        } else {
+            0.0
+        };
+        grayscale[i] = (normalized * 255.0).round() as u8;
+    }
+
+    // Apply LUT if provided
+    if let Some(lut) = lut {
+        for pixel in grayscale.iter_mut() {
+            *pixel = lut[*pixel as usize];
         }
-        grayscale.push(byte);
     }
 
-    // Compute downscaling factors
-    let scale_row = if rows > MAX_DIM {
-        (rows as f64 / MAX_DIM as f64).ceil() as usize
-    } else {
-        1
-    };
-    let scale_col = if cols > MAX_DIM {
-        (cols as f64 / MAX_DIM as f64).ceil() as usize
-    } else {
-        1
-    };
-
-    if scale_row == 1 && scale_col == 1 {
-        return grayscale;
+    // If dimensions are already within bounds, return as-is
+    if width <= MAX_DIM && height <= MAX_DIM && 
+       width >= MIN_DIM && height >= MIN_DIM {
+        println!("Image dimensions within bounds: {}×{}", width, height);
+        return (grayscale, width, height);
     }
 
-    let new_rows = rows / scale_row;
-    let new_cols = cols / scale_col;
+    // 2) Calculate new dimensions that preserve aspect ratio
+    let aspect_ratio = width as f64 / height as f64;
+    
+    let (new_width, new_height) = if aspect_ratio > 1.0 {
+        // Wide image
+        let new_width = MAX_DIM;
+        let new_height = ((new_width as f64 / aspect_ratio).round() as usize).max(MIN_DIM);
+        (new_width, new_height)
+    } else {
+        // Tall image
+        let new_height = MAX_DIM;
+        let new_width = ((new_height as f64 * aspect_ratio).round() as usize).max(MIN_DIM);
+        (new_width, new_height)
+    };
 
     println!(
-        "⚠️ Image resized from {}×{} to {}×{} to fit SDL limits",
-        rows, cols, new_rows, new_cols
+        "⚠️ Downscaling image from {}×{} to {}×{} to fit SDL limits",
+        width, height, new_width, new_height
     );
 
-    // Downsample (nearest-neighbor)
-    let mut downscaled = Vec::with_capacity(new_rows * new_cols);
-    for r in 0..new_rows {
-        for c in 0..new_cols {
-            let orig_r = r * scale_row;
-            let orig_c = c * scale_col;
-            let idx = orig_r * cols + orig_c;
-            downscaled.push(grayscale[idx]);
+    // 3) Perform nearest-neighbor downsampling
+    let mut downscaled = vec![0u8; new_width * new_height];
+    let x_ratio = width as f64 / new_width as f64;
+    let y_ratio = height as f64 / new_height as f64;
+
+    for y in 0..new_height {
+        let src_y = (y as f64 * y_ratio) as usize;
+        for x in 0..new_width {
+            let src_x = (x as f64 * x_ratio) as usize;
+            let src_idx = src_y * width + src_x;  // Use width for source stride
+            let dst_idx = y * new_width + x;           // Use new_width for destination stride
+            
+            if src_idx < grayscale.len() {
+                downscaled[dst_idx] = grayscale[src_idx];
+            }
         }
     }
 
-    downscaled
+    println!("Final downscaled dimensions: {}×{}", new_width, new_height);
+    println!("Final buffer size: {}", downscaled.len());
+    
+    (downscaled, new_width, new_height)
 }
 
 

@@ -4,16 +4,17 @@ use std::path::{Path, PathBuf};
 fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    // Trigger rebuild if C header changes
-    let header_path = "fortran/include/sem_sim_c.h";
-    println!("cargo:rerun-if-changed={}", header_path);
+    // Trigger rebuild if C header or source changes
+    println!("cargo:rerun-if-changed=fortran/include/sem_sim_c.h");
+    println!("cargo:rerun-if-changed=fortran/src/run.c");
+    println!("cargo:rerun-if-changed=fortran/src/monte_carlo.f90");
+    println!("cargo:rerun-if-changed=fortran/src/c_interface.f90");
+    println!("cargo:rerun-if-changed=fortran/src/signals.f90");
 
     // === Generate Rust bindings for the C interface ===
     let bindings = bindgen::Builder::default()
-        .header(header_path)
+        .header("fortran/include/sem_sim_c.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-        .rust_target(bindgen::RustTarget::Nightly)
-        .wrap_unsafe_ops(true)
         .generate_comments(true)
         .allowlist_function("c_.*") // Only include the c_ prefixed functions
         .generate()
@@ -23,29 +24,22 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
-    // === Compile C wrapper if needed ===
+    // === Compile C wrapper ===
     cc::Build::new()
         .file("fortran/src/run.c")
         .include("fortran/include")
         .compile("sem_c_api");
 
-    // === Link Fortran static library ===
-    let fortran_lib_path = Path::new("fortran/build");
-    let fortran_lib_file = fortran_lib_path.join("libsem_sim.a");
-
-    if !fortran_lib_file.exists() {
-        panic!(
-            "Fortran static library not found at {}. Please run `cmake .. && make` in `fortran/build` first.",
-            fortran_lib_file.display()
-        );
-    }
-
-    // Tell Cargo where to find and how to link
-    println!("cargo:rustc-link-search=native={}", fortran_lib_path.display());
-    println!("cargo:rustc-link-lib=static=sem_sim");     // Link to Fortran lib
-    println!("cargo:rustc-link-lib=static=sem_c_api");    // Link to C wrapper
-
+    // === Link against Fortran libraries ===
+    println!("cargo:rustc-link-search=native=fortran/build");
+    println!("cargo:rustc-link-lib=static=sem_sim");
+    
     // Link against the Fortran runtime (GFortran)
     println!("cargo:rustc-link-search=native=/opt/homebrew/Cellar/gcc/14.2.0_1/lib/gcc/current");
     println!("cargo:rustc-link-lib=gfortran");
+    
+    // Link against system libraries
+    println!("cargo:rustc-link-lib=dylib=System");
+    println!("cargo:rustc-link-lib=dylib=c");
+    println!("cargo:rustc-link-lib=dylib=m");
 }

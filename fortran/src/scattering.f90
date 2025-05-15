@@ -5,48 +5,77 @@ module scattering
   use iso_fortran_env, only: dp => real64
   implicit none
   private
-  public :: elastic_scatter, inelastic_scatter
+  public :: elastic_scatter, inelastic_scatter, generate_secondaries
 
-  real(dp), parameter :: pi = 3.141592653589793_dp
-  real(dp), parameter :: electron_mass = 9.10938356e-31_dp ! in kg
-  real(dp), parameter :: electron_charge = 1.60217662e-19_dp ! in C
+  ! Physical constants
+  real(dp), parameter :: PI = 3.141592653589793_dp
+  real(dp), parameter :: ELECTRON_MASS = 9.10938356e-31_dp ! kg
+  real(dp), parameter :: ELECTRON_CHARGE = 1.60217662e-19_dp ! C
+  real(dp), parameter :: BOHR_RADIUS = 5.29177210903e-11_dp ! m
+  real(dp), parameter :: RYDBERG_ENERGY = 13.605693122994_dp ! eV
+  real(dp), parameter :: FINE_STRUCTURE = 1.0_dp/137.035999084_dp
+  real(dp), parameter :: SPEED_OF_LIGHT = 2.99792458e8_dp ! m/s
+  integer, parameter :: MAX_SE = 10 ! Maximum number of secondary electrons
 
 contains
 
-  function elastic_scatter(energy, atomic_number) result(scatter_angle)
-    ! Simulates an elastic scattering angle using Rutherford model approximation
-    real(dp), intent(in) :: energy      ! Beam energy in keV
+  function elastic_scatter(energy_in, atomic_number) result(scatter_angle)
+    ! Simulates an elastic scattering angle using Mott cross-section approximation
+    real(dp), intent(in) :: energy_in
     integer, intent(in) :: atomic_number
-    real(dp) :: scatter_angle          ! Scattering angle in radians
-    real(dp) :: theta_min, theta_max, theta, prob, rand
-
+    real(dp) :: scatter_angle
+    real(dp) :: energy, beta2, gamma, screening_param, eta, rand
+    
+    ! Work with local copy of energy
+    energy = energy_in * 1000.0_dp  ! Convert to eV
+    
+    ! Relativistic factors
+    beta2 = 1.0_dp - 1.0_dp/(1.0_dp + energy/(ELECTRON_MASS * SPEED_OF_LIGHT**2))**2
+    gamma = 1.0_dp/sqrt(1.0_dp - beta2)
+    
+    ! Screening parameter (TF model)
+    screening_param = 0.885_dp * BOHR_RADIUS * atomic_number**(-1.0_dp/3.0_dp)
+    eta = 2.0_dp * energy * screening_param / (FINE_STRUCTURE * BOHR_RADIUS)
+    
+    ! Sample from screened Rutherford distribution
     call random_number(rand)
-
-    ! Set angular range (avoid division by zero at 0 degrees)
-    theta_min = 1.0e-3_dp   ! in radians
-    theta_max = pi / 2.0_dp
-
-    ! Use inverse transform sampling on Rutherford distribution
-    prob = rand * (1.0_dp / tan(theta_min/2.0_dp)**2 - 1.0_dp / tan(theta_max/2.0_dp)**2)
-    theta = 2.0_dp * atan(sqrt(1.0_dp / prob + 1.0_dp / tan(theta_max/2.0_dp)**2))
-
-    scatter_angle = min(max(theta, theta_min), theta_max)
+    scatter_angle = acos(1.0_dp - 2.0_dp * rand/(1.0_dp + eta * (1.0_dp - rand)))
   end function elastic_scatter
 
-  function inelastic_scatter(energy, mean_free_path) result(energy_loss)
-    ! Simulates an inelastic scattering event resulting in energy loss
-    real(dp), intent(in) :: energy          ! Initial beam energy in keV
-    real(dp), intent(in) :: mean_free_path  ! Mean free path in nm
-    real(dp) :: energy_loss                ! Energy lost during scattering in keV
-    real(dp) :: rand
-
+  function inelastic_scatter(energy_in, atomic_number) result(energy_loss)
+    ! Simulates inelastic scattering using Bethe formula with straggling
+    real(dp), intent(in) :: energy_in
+    integer, intent(in) :: atomic_number
+    real(dp) :: energy_loss
+    real(dp) :: energy, mean_loss, straggling, rand
+    
+    ! Work with local copy of energy
+    energy = energy_in * 1000.0_dp  ! Convert to eV
+    
+    ! Mean energy loss (simplified Bethe formula)
+    mean_loss = (78500.0_dp * atomic_number) / energy * log(1.166_dp * energy/RYDBERG_ENERGY)
+    
+    ! Add energy straggling (simplified model)
     call random_number(rand)
-
-    ! Sample energy loss using exponential decay model
-    energy_loss = -mean_free_path * log(1.0_dp - rand) * 0.01_dp  ! Loss scaled arbitrarily
-
-    ! Limit energy loss to a fraction of the total energy
-    if (energy_loss > 0.2_dp * energy) energy_loss = 0.2_dp * energy
+    straggling = mean_loss * 0.1_dp * (2.0_dp * rand - 1.0_dp)
+    energy_loss = mean_loss + straggling
+    
+    ! Convert back to keV
+    energy_loss = energy_loss * 0.001_dp
   end function inelastic_scatter
+
+  function generate_secondaries(primary_energy) result(num_secondaries)
+    ! Generates secondary electrons based on primary electron energy
+    real(dp), intent(in) :: primary_energy
+    integer :: num_secondaries
+    real(dp) :: rand, yield
+    
+    ! Calculate SE yield using empirical formula
+    yield = 1.36_dp * (primary_energy/1.5_dp) * exp(-2.3_dp * sqrt(primary_energy/1.5_dp))
+    
+    ! Sample number of secondaries
+    call random_number(rand)
+    num_secondaries = min(int(rand * yield), MAX_SE)
+  end function generate_secondaries
 
 end module scattering

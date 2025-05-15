@@ -14,12 +14,14 @@ pub struct ScatterData {
 ///
 /// # Arguments
 /// - `energy` – Beam energy in keV
-/// - `thickness` – Sample thickness in micrometers
-/// - `angle_stddev` – Standard deviation of beam angle (radians)
-/// - `n_electrons` – Number of electrons to simulate
-pub fn init_simulation(energy: f64, thickness: f64, angle_stddev: f64, n_electrons: i32) {
+/// - `current` – Beam current in nA 
+/// - `resolution` – Image resolution in pixels
+/// - `distance` – Working distance in mm
+pub fn init_simulation(energy: f64, current: f64, resolution: i32, distance: f64) {
+    println!("Initializing simulation with {}keV beam energy, {}nA current, {}px resolution", 
+             energy, current, resolution);
     unsafe {
-        bindings::c_init_simulation(energy, thickness, angle_stddev, n_electrons);
+        bindings::c_init_simulation(energy, current, resolution, distance);
     }
 }
 
@@ -27,6 +29,7 @@ pub fn init_simulation(energy: f64, thickness: f64, angle_stddev: f64, n_electro
 ///
 /// This executes the Fortran backend's scattering and detection loop.
 pub fn run_simulation() {
+    println!("Starting Monte Carlo simulation");
     unsafe {
         bindings::c_run_simulation();
     }
@@ -43,15 +46,47 @@ pub fn get_scatter_data() -> ScatterData {
     unsafe {
         bindings::c_get_scatter_data(&mut raw_ptr, &mut rows, &mut cols);
         assert!(!raw_ptr.is_null(), "Null pointer returned from Fortran");
+        println!("Received data from Fortran with dimensions: {}×{}", rows, cols);
 
         let total = (rows * cols) as usize;
         let data_slice = slice::from_raw_parts(raw_ptr, total);
         let data_vec = data_slice.to_vec();
 
-        ScatterData {
+        // Ensure dimensions are positive before converting to usize
+        if rows <= 0 || cols <= 0 {
+            panic!("Invalid dimensions from Fortran: {}×{}", rows, cols);
+        }
+
+        let result = ScatterData {
             data: data_vec,
             rows: rows as usize,
             cols: cols as usize,
+        };
+        println!("Converted to ScatterData with dimensions: {}×{}", result.rows, result.cols);
+        result
+    }
+}
+
+/// Gets the 2D SEM image data from the simulation.
+pub fn get_image_data() -> (Vec<f64>, usize, usize) {
+    let mut width: i32 = 0;
+    let mut height: i32 = 0;
+    let mut raw_ptr: *mut f64 = ptr::null_mut();
+
+    unsafe {
+        bindings::c_get_image_data(&mut raw_ptr, &mut width, &mut height);
+        assert!(!raw_ptr.is_null(), "Null pointer returned from Fortran");
+        println!("Received image data from Fortran with dimensions: {}×{}", width, height);
+
+        let total = (width * height) as usize;
+        let data_slice = slice::from_raw_parts(raw_ptr, total);
+        let data_vec = data_slice.to_vec();
+
+        // Ensure dimensions are positive
+        if width <= 0 || height <= 0 {
+            panic!("Invalid dimensions from Fortran: {}×{}", width, height);
         }
+
+        (data_vec, width as usize, height as usize)
     }
 }

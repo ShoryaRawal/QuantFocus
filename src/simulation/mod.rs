@@ -41,9 +41,9 @@ impl SimulationManager {
                 // Initialize and run the Fortran simulation
                 init_simulation(
                     params.energy_kev,
-                    params.thickness_nm,
-                    params.angle_stddev_rad,
-                    params.num_electrons as i32,
+                    params.current_na,
+                    params.resolution,
+                    params.distance_mm,
                 );
                 run_simulation();
 
